@@ -1,0 +1,77 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This Cloudformation Template Creates VPC. This is a nested Cloudformation template.
+
+Outputs:
+  VpcId:
+    Value: !GetAtt vpcstack.Outputs.VpcId
+    Export:
+      Name: !Sub "${EnvName}-VpcId"
+  PublicSubnet1:
+    Value: !GetAtt vpcstack.Outputs.PublicSubnet1
+    Export:
+      Name: !Sub "${EnvName}-PublicSubnet1"
+  PublicSubnet2:
+    Value: !GetAtt vpcstack.Outputs.PublicSubnet2
+    Export:
+      Name: !Sub "${EnvName}-PublicSubnet2"
+  AppUri:
+    Value: !GetAtt applicationstack.Outputs.URL
+
+
+Parameters:
+  EnvName:
+    Type: String
+    Description: "Environment Name to use for creating the resources"
+  VPCTemplate:
+    Description: Path to the VPC template to use
+    Type: String
+  AppTemplate:
+    Type: String
+    Description: Path to the App template to use
+  VpcCidr:
+    Type: String
+    Description: "CIDR Block to use for VPC"
+    Default: "10.0.0.0/16"
+  SubnetIpBlocks:
+    Type: String
+    Description: "CIDR Block to use for VPC"
+    Default: "10.0.1.0/24, 10.0.2.0/24"
+  AppInstanceType:
+    Type: String
+    Default: 't2.micro'
+    Description: Instance type
+  S3Bucket:
+    Type: String
+    Description: Bucket for scripts.
+  SshKey:
+    Type: String
+    Description: Instantance ssh key.
+
+
+
+Resources:
+  vpcstack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref VPCTemplate
+      Parameters:
+        VpcCidr:
+          Ref: VpcCidr
+        SubnetIpBlocks:
+          Ref: SubnetIpBlocks
+  applicationstack:
+    DependsOn:
+      - vpcstack
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref AppTemplate
+      Parameters:
+        VPC: !GetAtt vpcstack.Outputs.VpcId
+        AppInstanceType:
+          Ref: AppInstanceType
+        Subnets:
+          !Join [ ",", [ !GetAtt vpcstack.Outputs.PublicSubnet1, !GetAtt vpcstack.Outputs.PublicSubnet2 ] ]
+        S3Bucket: !Ref S3Bucket
+        KeyName: !Ref SshKey
+        EnvName: !Ref EnvName

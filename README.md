@@ -2,6 +2,22 @@
 
 Deploy service with AWS Fargate using terraform
 
+## Requisites
+
+* Terraform 0.12+
+
+## Available regions
+```
+    us-east-1
+    us-east-2
+    us-west-1
+    us-west-2
+    eu-west-1
+    eu-west-2
+    eu-west-3
+    eu-central-1
+```
+
 ## Directory layout
 
     .
@@ -40,11 +56,31 @@ Optional
 
 ## Deploy
 
-TODO: Document how to run
+### Export your keys and region
+
+```sh
+export AWS_ACCESS_KEY_ID="XXXXXX"
+export AWS_SECRET_ACCESS_KEY="YYYYYYYYYYY"
+export AWS_DEFAULT_REGION="zzzzzzzzz"
+```
+####SSH_Key
+
+Be sure that you ssh key name exists in current region, you can insert it in `main.tf` file
+
+### Run deplouyment
+```
+make deploy
+```
 
 ## Test the whole setup
 
 TODO: Document how to test the setup
+
+## Cleanup
+
+```
+make cleanup
+```
 
 ## Note
 

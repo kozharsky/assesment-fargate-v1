@@ -1,0 +1,53 @@
+---
+# --------------------------------------------------------------------------- #
+# Contains all the install tasks                                              #
+# --------------------------------------------------------------------------- #
+- name: Ensure a list of yum packages are installed
+  yum:
+    name: "{{ packages }}"
+    state: latest
+    update_cache: yes
+  vars:
+    packages:
+    - python-pip
+    - yum-utils
+    - device-mapper-persistent-data
+    - lvm2
+    - amazon-linux-extras
+
+- name: Remove old versions of docker if installed
+  package:
+    name: "{{ item }}"
+    state: absent
+  with_items:
+    - lxc-docker
+    - docker-engine
+    - docker
+    - docker-common
+    - docker.io
+
+- name: Cleanup previous docker-py packages if installed
+  pip:
+    name: "{{ item }}"
+    state: absent
+  become: yes
+  with_items:
+    - docker
+    - docker-py
+
+- name: Add extras repository
+  shell: yum-config-manager --enable extras
+
+- name: Install docker-ce (centos) via amazon-linux-extras packages
+  shell: "amazon-linux-extras install docker=18.06.1 -y"
+
+- name: Enable Docker CE service at startup
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: run docker
+  shell: "docker run --name application -p 80:80 -d -v {{ ec2_config_folder }}/default.conf:{{ ngnix_config_folder }}/default.conf nginx"
+
+

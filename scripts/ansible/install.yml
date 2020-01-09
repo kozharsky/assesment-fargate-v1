@@ -1,0 +1,10 @@
+---
+- hosts: localhost
+  become: yes
+  vars:
+    ec2_config_folder: /home/ec2-user/scripts/ansible/roles/install/files
+    ngnix_config_folder: /etc/nginx/conf.d
+    nginx_html_folder: /usr/share/nginx/html
+
+  roles:
+    - install

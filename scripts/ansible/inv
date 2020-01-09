@@ -1,0 +1,9 @@
+# --------------------------------------------------------------------------- #
+# Inventory file                                                              #
+# --------------------------------------------------------------------------- #
+#                                                                             #
+# - Allows grouping of target machines                                        #
+# - Little use here as we always run in local mode                            #
+# --------------------------------------------------------------------------- #
+[development]
+localhost ansible_connection=local

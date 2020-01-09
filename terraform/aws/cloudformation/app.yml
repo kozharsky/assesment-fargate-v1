@@ -1,0 +1,203 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: This Cloudformation Template Creates VPC. This is a nested Cloudformation template.
+
+Outputs:
+  URL:
+    Description: URL of the LoadBalancer
+    Value: !Join ['', ['http://', !GetAtt [AppLoadBalancer, DNSName]]]
+
+
+Parameters:
+  VPC:
+    Type: String
+    Description: "CIDR Block to use for VPC"
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Choose which subnets this App cluster should be deployed to
+  AppInstanceType:
+    Type: String
+    Description: App instance type
+  KeyName:
+    Type: String
+  VolumeSize:
+    Type: Number
+    Default: 200
+  VolumeType:
+    Type: String
+    Default: "gp2"
+  S3Bucket:
+    Type: String
+    Description: Bucket for scripts.
+  EnvName:
+    Type: String
+    Description: "Environment Name to use for creating the resources"
+
+Mappings:
+
+  AWSRegionToAMI:
+    us-east-1:
+      AMI: ami-00068cd7555f543d5
+    us-east-2:
+      AMI: ami-0dacb0c129b49f529
+    us-west-1:
+      AMI: ami-0b2d8d1abb76a53d8
+    us-west-2:
+      AMI: ami-0c5204531f799e0c6
+    eu-west-1:
+      AMI: ami-01f14919ba412de34
+    eu-west-2:
+      AMI: ami-05f37c3995fffb4fd
+    eu-west-3:
+      AMI: ami-0e9e6ba6d3d38faa8
+    eu-central-1:
+      AMI: ami-0d4c3eabb9e72650a
+
+Resources:
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Access to the App host
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: "0.0.0.0/0"
+        - SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+          IpProtocol: -1
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-kozharsky"
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Access to the load balancer that sits in front of App
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-LoadBalancer"
+
+  AppLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${EnvName}"
+      Subnets: !Ref Subnets
+      Scheme:  internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPC
+      Port:  80
+      Protocol: HTTP
+      HealthCheckPath: /__healthcheck__
+
+  AppListener:
+    DependsOn:
+      - AppTargetGroup
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref AppLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppTargetGroup
+
+  AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      RoleName: !Sub "${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: !Sub "${AWS::StackName}-AppPolicy-${AWS::Region}"
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:*
+            - ec2:*
+            - cloudformation:*
+            - iam:PassRole
+            - ssm:*
+            Resource: "*"
+
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref AppRole
+
+
+  AppLaunchConfiguration:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      SecurityGroups:
+        - !Ref AppSecurityGroup
+      AssociatePublicIpAddress: true
+      ImageId: !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMI]
+      KeyName: !Ref KeyName
+      InstanceType: !Ref AppInstanceType
+      IamInstanceProfile: !Ref AppInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeSize: !Ref VolumeSize
+            VolumeType: !Ref VolumeType
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash
+          yum update -y
+          amazon-linux-extras install ansible2 -y
+          aws s3 cp --region ${AWS::Region} s3://${S3Bucket}/ansible.tar.gz .
+          tar -xzvf ansible.tar.gz -C /home/ec2-user
+          mv /home/ec2-user/scripts/ansible/roles/install/files/ansible.conf /etc/ansible/ansible.cfg
+          ansible-playbook /home/ec2-user/scripts/ansible/install.yml
+
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref Subnets
+      TargetGroupARNs:
+        - !Ref AppTargetGroup
+      LaunchConfigurationName: !Ref AppLaunchConfiguration
+      MinSize: 1
+      MaxSize: 1
+      DesiredCapacity: 1
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Apphost"
+          PropagateAtLaunch: true
+#    CreationPolicy:
+#      ResourceSignal:
+#        Timeout: PT5M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT5M
+        SuspendProcesses:
+          - HealthCheck
+          - ReplaceUnhealthy
+          - AZRebalance
+          - AlarmNotification
+          - ScheduledActions
+        WaitOnResourceSignals: true
